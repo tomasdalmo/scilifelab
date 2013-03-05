@@ -38,6 +38,12 @@ def is_fastq(fname):
             return True
     return False
 
+def is_pdf(pname):
+     pdf_ext = [".pdf"]
+     for ext in pdf_ext:
+         if pname.endswith(ext):
+             return True
+     return False
   
 def create_final_name(fname, date, fc_id, sample_name):
     """Create the final name of the delivered file
@@ -147,6 +153,31 @@ def rsync_files(to_copy, logfile, dry):
             # Modify the permissions to ug+rw
             os.chmod(dst_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP)
   
+def get_report_copy_list(proj_name, reportpath, dest_proj_path, sample_copy_list):
+    
+     to_copy=[]
+     fcid = get_run_info(sample_copy_list)
+     pdf_list=filtered_walk(reportpath,is_pdf)    
+     project_report_name = proj_name+'_project_summary.pdf'
+ 
+     for report in pdf_list:
+         if report.split('/')[-1] == project_report_name:
+             to_copy.append([report, dest_proj_path, project_report_name])
+         for flowcell in fcid:
+             sample_report_name =  proj_name+'_' + flowcell + '_sample_summary.pdf'
+             if report.split('/')[-1] == sample_report_name:
+                 to_copy.append([report, dest_proj_path, sample_report_name])
+ 
+     return sample_copy_list+to_copy
+ 
+def get_run_info(sample_copy_list):
+     run_info_list=[]  
+ 
+     for index in range(len(sample_copy_list)):
+         if not os.path.basename(sample_copy_list[index][1]) in  run_info_list:
+             run_info_list.append(os.path.basename(sample_copy_list[index][1]))
+     
+     return run_info_list 
 
 def main():
     parser = argparse.ArgumentParser(description="A script to help doing the deliveries, now using the Casava directory structure. " \
@@ -156,6 +187,8 @@ def main():
                         help="Specify a path to a Casava directory manually")
     parser.add_argument('-l', '--log-path', action="store", dest="logpath", default='/proj/a2010002/private/delivery_logs', 
                         help="Specify a path to a log file")
+    parser.add_argument('-r', '--proj_report', action="store", dest="reportpath", default=None,
+                         help="Delivers project status and sample status reports")
     parser.add_argument('-i', '--interactive', action="store_true", dest="interactive", default=False, 
                         help="Interactively select samples to be delivered")
     parser.add_argument('-d', '--dry-run', action="store_true", dest="dry", default=False, 
@@ -216,7 +249,12 @@ def main():
                                  args.deliver_all_fcs,
                                  args.deliver_nophix,
                                  skip_list)
-    
+    if args.reportpath is None:
+        total_to_copy = to_copy
+    else:
+        total_to_copy = get_report_copy_list(args.project_name, args.reportpath, del_path_top, to_copy)
+        
+
     # Prompt user if any of the files are non-compressed
     for fqfile, _, _ in to_copy:
         if os.path.splitext(fqfile)[1] == ".gz":
@@ -228,7 +266,7 @@ def main():
             break
         clean_exit(1,logfile,args.dry)
             
-    rsync_files(to_copy,
+    rsync_files(total_to_copy,
                 logfile,
                 args.dry)
         
